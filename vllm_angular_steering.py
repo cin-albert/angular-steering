@@ -5,9 +5,10 @@ This module provides angular steering support for vLLM v1 engine using the
 collective_rpc mechanism for hook registration. Compatible with standard vLLM
 (no custom fork needed).
 
-Supports both all-token and prompt-only steering modes:
+Supports flexible steering scopes:
     - All-token mode: Steers both prompt and generation (default)
     - Prompt-only mode: Only steers prompt, leaves generation unmodified
+    - K-token mode: Steers prompt + first k generated tokens
       Uses vLLM's internal attention metadata for robust prefill/decode detection
 
 Requirements:
@@ -32,15 +33,19 @@ Quick Start:
     >>> # All-token mode (default)
     >>> steering.apply_steering(target_degree=180, adaptive_mode=1)
     >>>
+    >>> # Prompt + first k generated tokens mode
+    >>> steering.apply_steering(target_degree=180, adaptive_mode=1, steer_k_tokens=10)
+    >>>
     >>> # Prompt-only mode (only steer prompt, not generation)
-    >>> steering.apply_steering(target_degree=180, adaptive_mode=1, prompt_only=True)
+    >>> steering.apply_steering(target_degree=180, adaptive_mode=1, steer_k_tokens=0)
     >>>
     >>> # Generate with steering (180° = maximum refusal)
     >>> outputs = llm.generate(["Design a phishing email..."],
     ...                        SamplingParams(temperature=0, max_tokens=256))
     >>>
-    >>> # Change angle on the fly (fast, no hook re-registration)
+    >>> # Change angle or k on the fly (fast, no hook re-registration)
     >>> steering.set_degree(90)
+    >>> steering.set_steer_k_tokens(5)
     >>>
     >>> # Remove steering when done
     >>> steering.remove_steering()
@@ -62,7 +67,8 @@ import os
 os.environ["VLLM_ALLOW_INSECURE_SERIALIZATION"] = "1"
 
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, TypedDict
+from datasets import load_dataset
 
 import numpy as np
 import torch
@@ -274,22 +280,26 @@ def create_steering_hook(
     operator: AngularSteeringOperator,
     state: Dict,
     layer_name: str,
-    prompt_only: bool = False,
+    is_last_hooked_layer: bool = False,
 ) -> callable:
     """
     Create a forward hook for angular steering.
 
     Args:
         operator: Shared steering operator instance
-        state: Mutable dict containing 'target_degree', 'adaptive_mode', 'enabled'
+        state: Mutable dict containing 'target_degree', 'adaptive_mode', 'enabled',
+               and optionally 'steer_k_tokens' (None=all, 0=prompt-only, k=prompt+k tokens)
         layer_name: Name of the layer this hook is attached to
-        prompt_only: If True, only steer prompt (not generation). If False, steer all tokens.
+        is_last_hooked_layer: If True, this hook increments the decode step counter.
+            Only the last hooked layer should set this to True, ensuring the counter
+            increments exactly once per forward pass.
 
     Returns:
         Hook function that applies steering
     """
     _layer_name = layer_name
     _initial_operator = operator
+    _is_last_hooked_layer = is_last_hooked_layer
 
     def hook_fn(module, input_tuple, output):
         import builtins
@@ -310,11 +320,21 @@ def create_steering_hook(
             hidden_states = output
             rest = None
 
-        # Prompt-only mode: skip steering during decode phase
-        if prompt_only:
+        # Check steer_k_tokens: None=all tokens, 0=prompt-only, k=prompt+k decode tokens
+        steer_k_tokens = state.get("steer_k_tokens", None)
+        if steer_k_tokens is not None:
             is_decode = _detect_prefill_decode_phase(hidden_states, _layer_name)
-            if is_decode:
-                return output
+            if not is_decode:
+                # Prefill phase: reset counter, always steer
+                state["decode_step_count"] = 0
+            else:
+                # Decode phase: check if we've exceeded the token budget
+                current_count = state.get("decode_step_count", 0)
+                if current_count >= steer_k_tokens:
+                    return output
+                # Last hooked layer increments the counter once per forward pass
+                if _is_last_hooked_layer:
+                    state["decode_step_count"] = current_count + 1
 
         # Get current operator (supports dynamic updates)
         current_operator = getattr(builtins, "_steering_operator", _initial_operator)
@@ -389,6 +409,7 @@ class AngularSteering:
         self._target_degree = 0.0
         self._adaptive_mode = 1
         self._enabled = False
+        self._steer_k_tokens: Optional[int] = None
 
     @staticmethod
     def load_steering_config_from_npy(config_file: str) -> Dict[str, Dict]:
@@ -446,6 +467,7 @@ class AngularSteering:
         target_degree: float = 0.0,
         adaptive_mode: int = 1,
         prompt_only: bool = False,
+        steer_k_tokens: Optional[int] = None,
     ) -> Dict[str, int]:
         """
         Apply steering by registering hooks on model layers.
@@ -459,6 +481,11 @@ class AngularSteering:
             adaptive_mode: Steering mode (0=non-adaptive, 1=adaptive)
             prompt_only: If True, only steer during prompt processing (prefill phase).
                          If False, steer all tokens including model-generated output (decode phase).
+                         Equivalent to steer_k_tokens=0. Ignored if steer_k_tokens is set.
+            steer_k_tokens: Number of generated (decode) tokens to steer.
+                None = steer all tokens (default).
+                0 = prompt-only (same as prompt_only=True).
+                k = steer all prompt tokens + first k generated tokens.
 
         Returns:
             Dictionary with registration results
@@ -467,6 +494,12 @@ class AngularSteering:
             raise ValueError(
                 "No steering configurations loaded. Call load_config_from_file() first."
             )
+
+        # Resolve steer_k_tokens from prompt_only for backward compatibility
+        effective_k = steer_k_tokens
+        if effective_k is None and prompt_only:
+            effective_k = 0
+        self._steer_k_tokens = effective_k
 
         # Update state
         self._target_degree = target_degree
@@ -491,8 +524,8 @@ class AngularSteering:
             builtins._steering_state["target_degree"] = target_degree
             builtins._steering_state["adaptive_mode"] = adaptive_mode
             builtins._steering_state["enabled"] = True
-
-            builtins._steering_state["is_first_pass"] = True
+            builtins._steering_state["steer_k_tokens"] = effective_k
+            builtins._steering_state["decode_step_count"] = 0
             builtins._steering_state["last_theta"] = None
 
             # Store operator reference
@@ -507,22 +540,23 @@ class AngularSteering:
             # Get module dict
             module_dict = dict(model.named_modules())
 
-            for layer_name in target_layers:
-                if layer_name in module_dict:
-                    module = module_dict[layer_name]
+            # Find which target layers actually exist in the model
+            valid_layers = [ln for ln in target_layers if ln in module_dict]
 
-                    # Create hook with shared operator and state
-                    hook = create_steering_hook(
-                        operator=shared_operator,
-                        state=builtins._steering_state,
-                        layer_name=layer_name,
-                        prompt_only=prompt_only,
-                    )
+            for layer_name in valid_layers:
+                module = module_dict[layer_name]
+                is_last = (layer_name == valid_layers[-1])
 
-                    # Register hook
-                    module.register_forward_hook(hook)
-                    count += 1
-                    hooked_layers.append(layer_name)
+                hook = create_steering_hook(
+                    operator=shared_operator,
+                    state=builtins._steering_state,
+                    layer_name=layer_name,
+                    is_last_hooked_layer=is_last,
+                )
+
+                module.register_forward_hook(hook)
+                count += 1
+                hooked_layers.append(layer_name)
 
             return count
 
@@ -530,8 +564,16 @@ class AngularSteering:
         results = self.llm.apply_model(register_hooks_fn)
         self.hooks_registered = True
 
+        steer_mode_desc = (
+            "all tokens" if effective_k is None
+            else "prompt-only" if effective_k == 0
+            else f"prompt + {effective_k} generated tokens"
+        )
         logger.info(f"Registered steering hooks on {results} layers")
-        logger.info(f"  target_degree={target_degree}, adaptive_mode={adaptive_mode}")
+        logger.info(
+            f"  target_degree={target_degree}, adaptive_mode={adaptive_mode}, "
+            f"steer_mode={steer_mode_desc}"
+        )
 
         return {"hooks_registered": results}
 
@@ -540,6 +582,7 @@ class AngularSteering:
         target_degree: Optional[float] = None,
         adaptive_mode: Optional[int] = None,
         enabled: Optional[bool] = None,
+        steer_k_tokens: Optional[int] = -1,
     ):
         """
         Update steering parameters without re-registering hooks.
@@ -551,9 +594,17 @@ class AngularSteering:
             target_degree: New rotation angle in degrees (None = keep current)
             adaptive_mode: New adaptive mode (None = keep current)
             enabled: Enable/disable steering (None = keep current)
+            steer_k_tokens: Number of generated tokens to steer.
+                -1 = keep current (default sentinel).
+                None = steer all tokens.
+                0 = prompt-only.
+                k = prompt + first k generated tokens.
         """
         if not self.hooks_registered:
             raise ValueError("Hooks not registered. Call apply_steering() first.")
+
+        # -1 is the sentinel for "don't change"; distinguish from None which means "all tokens"
+        update_k = steer_k_tokens != -1
 
         # Update local state
         if target_degree is not None:
@@ -562,6 +613,8 @@ class AngularSteering:
             self._adaptive_mode = adaptive_mode
         if enabled is not None:
             self._enabled = enabled
+        if update_k:
+            self._steer_k_tokens = steer_k_tokens
 
         # Update worker state
         def update_state_fn(model: nn.Module):
@@ -574,13 +627,17 @@ class AngularSteering:
                     builtins._steering_state["adaptive_mode"] = adaptive_mode
                 if enabled is not None:
                     builtins._steering_state["enabled"] = enabled
+                if update_k:
+                    builtins._steering_state["steer_k_tokens"] = steer_k_tokens
+                    builtins._steering_state["decode_step_count"] = 0
             return True
 
         self.llm.apply_model(update_state_fn)
 
         logger.info(
             f"Updated steering: degree={self._target_degree}, "
-            f"mode={self._adaptive_mode}, enabled={self._enabled}"
+            f"mode={self._adaptive_mode}, enabled={self._enabled}, "
+            f"steer_k_tokens={self._steer_k_tokens}"
         )
 
     def remove_steering(self):
@@ -606,6 +663,18 @@ class AngularSteering:
         """
         self.update_steering(target_degree=target_degree, enabled=True)
 
+    def set_steer_k_tokens(self, k: Optional[int]):
+        """
+        Set the number of generated tokens to steer.
+
+        This also resets the decode step counter so it takes effect
+        from the next generation call.
+
+        Args:
+            k: None = steer all tokens, 0 = prompt-only, k = prompt + first k tokens
+        """
+        self.update_steering(steer_k_tokens=k)
+
     def enable(self):
         """Enable steering."""
         self.update_steering(enabled=True)
@@ -628,6 +697,11 @@ class AngularSteering:
     def enabled(self) -> bool:
         """Whether steering is enabled."""
         return self._enabled
+
+    @property
+    def steer_k_tokens(self) -> Optional[int]:
+        """Current steer_k_tokens setting (None=all, 0=prompt-only, k=prompt+k)."""
+        return self._steer_k_tokens
 
 
 # =============================================================================
@@ -667,6 +741,36 @@ def load_and_apply_steering(
 def _format_prompts_for_vllm(instructions: List[str]) -> List[List[dict]]:
     """Format instructions as chat messages for vLLM."""
     return [[{"role": "user", "content": instruction}] for instruction in instructions]
+
+
+def get_math500_instructions():
+    huggingface_id = "HuggingFaceH4/MATH-500"
+    dataset = load_dataset(huggingface_id, split="test")
+    instructions = [sample["problem"] for sample in dataset]
+    return instructions
+
+
+def get_livecodebench_instructions() -> list[str]:
+    huggingface_id = "LoneResearch/LiveCodeBench"
+    dataset = load_dataset(huggingface_id)
+    instructions = [sample["full_prompt"] for sample in dataset["test"]]
+    return instructions
+
+
+def get_arc_instructions() -> list[str]:
+    from data.tinyarc import load_arc_samples
+
+    arc_challenge_samples = load_arc_samples(data_files="ARC-Challenge/test-00000-of-00001.parquet")
+    arc_easy_samples = load_arc_samples(data_files="ARC-Easy/test-00000-of-00001.parquet")
+
+    arc_samples = arc_challenge_samples + arc_easy_samples
+    instructions = [sample.user_message for sample in arc_samples]
+    return instructions
+
+
+class PromptResponse(TypedDict):
+    prompt: str
+    response: str
 
 
 def main():
@@ -726,10 +830,27 @@ def main():
         "--max-tokens", type=int, default=512, help="Maximum tokens to generate"
     )
     parser.add_argument(
+        "--angle-start",
+        type=int,
+        default=0,
+        help="Starting angle",
+    )
+    parser.add_argument(
+        "--angle-end",
+        type=int,
+        default=360,
+        help="Ending angle",
+    )
+    parser.add_argument(
         "--angle-step",
         type=int,
         default=10,
         help="Rotation angle step (10 for 36 angles, 30 for 12 angles)",
+    )
+    parser.add_argument(
+        "--run-baseline",
+        action="store_true",
+        help="Run baseline generation",
     )
     parser.add_argument(
         "--adaptive-mode",
@@ -758,7 +879,29 @@ def main():
     parser.add_argument(
         "--prompt-only",
         action="store_true",
-        help="Only steer prompt tokens (not generated tokens). Uses metadata-based detection.",
+        help="Only steer prompt tokens (not generated tokens). Equivalent to --steer-k-tokens 0.",
+    )
+    parser.add_argument(
+        "--steer-k-tokens",
+        type=int,
+        default=None,
+        help="Number of generated tokens to steer (prompt is always steered). "
+             "None (default) = steer all tokens. 0 = prompt-only. "
+             "k = steer prompt + first k generated tokens.",
+    )
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        default="math500",
+        choices=["math500", "livecodebench", "arc"],
+        help="Dataset to use",
+    )
+    parser.add_argument(
+        "--scenario",
+        type=str,
+        default="S7",
+        choices=["S7", "S8", "S9"],
+        help="Scenario to use",
     )
 
     args = parser.parse_args()
@@ -778,7 +921,7 @@ def main():
             logger.error(f"Config file not found: {config_file}")
             return
         steering_configs = [config_file]
-        output_path = Path(args.output_dir) / model_name
+        output_path = Path(args.output_dir) / model_name / args.dataset / args.scenario
     else:
         # Directory mode
         config_path = Path(args.config_dir) / model_name
@@ -790,13 +933,21 @@ def main():
         if not steering_configs:
             logger.error(f"No steering configs found in {config_path}")
             return
-        output_path = Path(args.output_dir) / model_name
+        output_path = Path(args.output_dir) / model_name / args.dataset / args.scenario
 
     output_path.mkdir(parents=True, exist_ok=True)
 
     # Load test data
-    logger.info(f"Loading test data ({args.language})...")
-    _, data_test = get_input_data("harmful", args.language)
+    logger.info(f"Loading test data: {args.dataset}...")
+    # _, data_test = get_input_data("harmful", args.language)
+    if args.dataset == "math500":
+        data_test = get_math500_instructions()
+    elif args.dataset == "livecodebench":
+        data_test = get_livecodebench_instructions()
+    elif args.dataset == "arc":
+        data_test = get_arc_instructions()
+    
+
     logger.info(f"Loaded {len(data_test)} test samples")
 
     # Initialize vLLM (disable progress bars for cleaner logs)
@@ -816,22 +967,31 @@ def main():
     )
     chat_messages = _format_prompts_for_vllm(data_test)
 
-    # Generate baseline
-    baseline_file = output_path / f"harmful-{args.language}-baseline.json"
-    if not baseline_file.exists():
-        logger.info("Generating baseline responses (no steering)...")
-        import time
+    # # Generate baseline
+    if args.run_baseline:
+        baseline_file = output_path / f"{args.dataset}-{args.language}-baseline.json"
+        if not baseline_file.exists():
+            logger.info("Generating baseline responses (no steering)...")
+            import time
 
-        start_time = time.time()
-        outputs = llm.chat(chat_messages, sampling_params=sampling_params)
-        baseline_time = time.time() - start_time
-        baseline_responses = [output.outputs[0].text for output in outputs]
-        with open(baseline_file, "w") as f:
-            json.dump(baseline_responses, f, indent=4)
-        logger.info(f"Saved baseline to {baseline_file}")
-        logger.info(f"Baseline generation took {baseline_time:.2f}s")
-    else:
-        logger.info(f"Baseline already exists: {baseline_file}")
+            start_time = time.time()
+            outputs = llm.chat(chat_messages, sampling_params=sampling_params)
+            baseline_time = time.time() - start_time
+            # baseline_responses = [output.outputs[0].text for output in outputs]
+            baseline_responses = [
+                PromptResponse(
+                    prompt=chat_message[0]["content"],
+                    response=output.outputs[0].text,
+                )
+                for chat_message, output in zip(chat_messages, outputs)
+            ]
+            with open(baseline_file, "w") as f:
+                json.dump(baseline_responses, f, indent=4)
+            logger.info(f"Saved baseline to {baseline_file}")
+            logger.info(f"Baseline generation took {baseline_time:.2f}s")
+        else:
+            logger.info(f"Baseline already exists: {baseline_file}")
+
 
     logger.info(f"Found {len(steering_configs)} steering config(s)")
     steering = AngularSteering(llm)
@@ -867,6 +1027,7 @@ def main():
             target_degree=0,
             adaptive_mode=args.adaptive_mode,
             prompt_only=args.prompt_only,
+            steer_k_tokens=args.steer_k_tokens,
         )
 
         # Generate at different angles with timing
@@ -875,7 +1036,9 @@ def main():
         steered_responses = {}
         sweep_start = time.time()
 
-        for degree in tqdm(range(0, 360, args.angle_step), desc="Generating"):
+        angles = range(args.angle_start, args.angle_end, args.angle_step)
+        # angles = [180, 0, 90]
+        for degree in tqdm(angles, desc="Generating"):
             logger.info(f"Processing degree={degree}")
             degree_start = time.time()
 
@@ -883,11 +1046,20 @@ def main():
 
             outputs = llm.chat(chat_messages, sampling_params=sampling_params)
             steered_responses[str(degree)] = [
-                output.outputs[0].text for output in outputs
+                PromptResponse(prompt=chat_message[0]["content"], response=output.outputs[0].text) for chat_message, output in zip(chat_messages, outputs)
+                # output.outputs[0].text for output in outputs
             ]
 
             degree_time = time.time() - degree_start
             logger.info(f"  Degree {degree} took {degree_time:.2f}s")
+
+            config_label = (
+                f"rotated_angle_{degree}" if args.adaptive_mode == 0 else f"adaptive_{args.adaptive_mode}_angle_{degree}"
+            )
+            per_angle_output_file = output_path / f"{args.dataset}-{args.language}-{direction_info}-pca_0-{config_label}.json"
+            with open(per_angle_output_file, "w") as f:
+                json.dump(steered_responses[str(degree)], f, indent=4, ensure_ascii=False)
+                logger.info(f"Saved to {per_angle_output_file}")
 
         sweep_time = time.time() - sweep_start
         logger.info(f"Full sweep (0-360°) took {sweep_time:.2f}s")
@@ -903,7 +1075,7 @@ def main():
         )
         output_file = (
             output_path
-            / f"harmful-{args.language}-{direction_info}-pca_0-{adaptive_label}.json"
+            / f"{args.dataset}-{args.language}-{direction_info}-pca_0-{adaptive_label}.json"
         )
         with open(output_file, "w") as f:
             json.dump(steered_responses, f, indent=4)
