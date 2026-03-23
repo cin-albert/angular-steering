@@ -24,11 +24,9 @@ Upload your generation files to the `LoneResearch` Hugging Face organization aft
 
 **Usage:**
 ```bash
-python upload_result.py <local_folder_path> <model_name> <dataset_name>
+python upload_result.py <model_name> <dataset_name>
 ```
-- `<local_folder_path>`: Path to the directory containing your generation files.
-
-- `<model_name>`: Name of the model (e.g., DeepSeek-R1-Distill-Qwen-14B).
+- `<model_name>`: Name of the model (The string after the slash `/`, e.g. DeepSeek-R1-Distill-Qwen-14B).
 
 - `<dataset_name>`: Name of the evaluation dataset (e.g., math500).
 

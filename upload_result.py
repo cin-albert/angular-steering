@@ -10,19 +10,18 @@ def main():
     REPO_ID = "LoneResearch/thinking-steering-generations"
     repo_type = "dataset"
 
-    if len(sys.argv) != 4:
-        logger.error("Usage: python upload_result.py <local_folder_path> <model_name> <dataset_name>")
+    if len(sys.argv) != 3:
+        logger.error("Usage: python upload_result.py <model_name> <dataset_name>")
         sys.exit(1)
 
-    local_folder_path = sys.argv[1]
-
-    if not os.path.isdir(local_folder_path): # Changed to .is_dir() for specificity
-        logger.error(f"Local path is not a directory or does not exist: {local_folder_path}")
-        sys.exit(1)
-
-    model_name = sys.argv[2]
-    dataset_name = sys.argv[3]
+    model_name = sys.argv[1]
+    dataset_name = sys.argv[2]
     path_in_repo = f"{model_name}/{dataset_name}"
+    local_folder_path = f"output/thinking_steering_generations/{model_name}/{dataset_name}/"
+
+    if not os.path.exists(local_folder_path):
+        logger.error(f"Cannot find the generation files at: {local_folder_path}")
+        sys.exit(1)
 
     try:
         logger.info(f"Starting upload to {REPO_ID}/{path_in_repo}...")
