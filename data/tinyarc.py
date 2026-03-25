@@ -33,6 +33,7 @@ def load_arc_samples(
             question=sample["question"][0],
             choices=sample["choices"][0],
             answerKey=sample["answerKey"][0],
+            grade=sample["grade"][0],
         )
         samples.append(item)
 
