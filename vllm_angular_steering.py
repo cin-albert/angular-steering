@@ -757,6 +757,13 @@ def get_livecodebench_instructions() -> list[str]:
     return instructions
 
 
+def get_tinylivecodebench_instructions() -> list[str]:
+    huggingface_id = "LoneResearch/TinyLiveCodeBench"
+    dataset = load_dataset(huggingface_id)
+    instructions = [sample["full_prompt"] for sample in dataset["test"]]
+    return instructions
+
+
 def get_arc_instructions() -> list[str]:
     from data.tinyarc import load_arc_samples
 
@@ -893,7 +900,7 @@ def main():
         "--dataset",
         type=str,
         default="math500",
-        choices=["math500", "livecodebench", "arc"],
+        choices=["math500", "livecodebench", "arc", "tinylivecodebench"],
         help="Dataset to use",
     )
     parser.add_argument(
@@ -946,7 +953,10 @@ def main():
         data_test = get_livecodebench_instructions()
     elif args.dataset == "arc":
         data_test = get_arc_instructions()
-    
+    elif args.dataset == "tinylivecodebench":
+        data_test = get_tinylivecodebench_instructions()
+    else:
+        raise ValueError(f"Invalid dataset: {args.dataset}")
 
     logger.info(f"Loaded {len(data_test)} test samples")
 
