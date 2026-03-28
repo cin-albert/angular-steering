@@ -6,3 +6,6 @@ __pycache__/
 benchmarks/**/samples*
 .venv/
 pytorch_pure/output/
+
+# macos specific
+.DS_Store
