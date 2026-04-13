@@ -749,6 +749,12 @@ def get_math500_instructions():
     instructions = [sample["problem"] for sample in dataset]
     return instructions
 
+def get_tinymath500_instructions():
+    huggingface_id = "RMSteering/TinyMATH500-v200"
+    dataset = load_dataset(huggingface_id, split="test")
+    instructions = [sample["problem"] for sample in dataset]
+    return instructions
+
 
 def get_livecodebench_instructions() -> list[str]:
     huggingface_id = "LoneResearch/LiveCodeBench"
@@ -900,7 +906,7 @@ def main():
         "--dataset",
         type=str,
         default="math500",
-        choices=["math500", "livecodebench", "arc", "tinylivecodebench"],
+        choices=["math500", "tinymath500", "livecodebench", "tinylivecodebench", "arc"],
         help="Dataset to use",
     )
     parser.add_argument(
@@ -949,6 +955,8 @@ def main():
     # _, data_test = get_input_data("harmful", args.language)
     if args.dataset == "math500":
         data_test = get_math500_instructions()
+    elif args.dataset == "tinymath500":
+        data_test = get_tinymath500_instructions()
     elif args.dataset == "livecodebench":
         data_test = get_livecodebench_instructions()
     elif args.dataset == "arc":
