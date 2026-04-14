@@ -48,6 +48,7 @@ SCENARIOS_TO_CONFIG_FILES=(
     ["S8-DeepSeek-R1-Distill-Qwen-14B-tinylivecodebench"]="steering_configs/DeepSeek-R1-Distill-Qwen-14B/steering_config-s8-pca_0-livecodebench.npy"
     ["S8-DeepSeek-R1-Distill-Qwen-14B-arc"]="steering_configs/DeepSeek-R1-Distill-Qwen-14B/steering_config-s8-pca_0-arc.npy"
     ["S8-DeepSeek-R1-Distill-Qwen-14B-math500-purified"]="steering_configs/DeepSeek-R1-Distill-Qwen-14B/purified/steering_config-pca_0-math500-purified-p9-p19.npy"
+    ["S8-DeepSeek-R1-Distill-Qwen-14B-tinymath500-purified"]="steering_configs/DeepSeek-R1-Distill-Qwen-14B/purified/steering_config-pca_0-math500-purified-p9-p19.npy"
 
 
     # Qwen3-14B
