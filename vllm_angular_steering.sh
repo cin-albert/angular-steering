@@ -2,24 +2,22 @@
 
 DATASETS=(
     "math500"
-    # "livecodebench"
     # "arc"
     # "tinylivecodebench"
 )
 
 MODELS=(
     # "deepseek-ai/DeepSeek-R1-Distill-LLama-8B"
-    # "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"
-    # "Qwen/Qwen3-32B"
     "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B"
     # "Qwen/Qwen3-14B"
+    # "Qwen/Qwen3-32B"
 )
 
 SCENARIOS=(
     # "S4"
     # "S7"
-    "S8"
-    # "S9"
+    # "S8"
+    "S9"
 )
 
 
@@ -40,33 +38,35 @@ SCENARIOS_TO_CONFIG_FILES=(
     ["S8-Qwen3-32B-livecodebench"]="steering_configs/Qwen3-32B/steering_config-s8-pca_0-livecodebench.npy"
     ["S8-Qwen3-32B-tinylivecodebench"]="steering_configs/Qwen3-32B/steering_config-s8-pca_0-livecodebench.npy"
     ["S8-Qwen3-32B-arc"]="steering_configs/Qwen3-32B/steering_config-s8-pca_0-arc.npy"
+    ["S9-Qwen3-32B-math500"]="steering_configs/Qwen3-32B/steering_config-s9-pca_0-math500-purified.npy"
+    ["S9-Qwen3-32B-livecodebench"]="steering_configs/Qwen3-32B/steering_config-s9-pca_0-livecodebench-purified.npy"
+    ["S9-Qwen3-32B-arc"]="steering_configs/Qwen3-32B/steering_config-s9-pca_0-arc-purified.npy"
     
     # DeepSeek-R1-Distill-Qwen-14B
     ["S8-DeepSeek-R1-Distill-Qwen-14B-math500"]="steering_configs/DeepSeek-R1-Distill-Qwen-14B/steering_config-s8-pca_0-math500.npy"
     ["S8-DeepSeek-R1-Distill-Qwen-14B-livecodebench"]="steering_configs/DeepSeek-R1-Distill-Qwen-14B/steering_config-s8-pca_0-livecodebench.npy"
     ["S8-DeepSeek-R1-Distill-Qwen-14B-tinylivecodebench"]="steering_configs/DeepSeek-R1-Distill-Qwen-14B/steering_config-s8-pca_0-livecodebench.npy"
     ["S8-DeepSeek-R1-Distill-Qwen-14B-arc"]="steering_configs/DeepSeek-R1-Distill-Qwen-14B/steering_config-s8-pca_0-arc.npy"
-    ["S8-DeepSeek-R1-Distill-Qwen-14B-math500-purified"]="steering_configs/DeepSeek-R1-Distill-Qwen-14B/purified/steering_config-pca_0-math500-purified.npy"
-
+    ["S9-DeepSeek-R1-Distill-Qwen-14B-math500"]="steering_configs/DeepSeek-R1-Distill-Qwen-14B/steering_config-s9-pca_0-math500-purified.npy"
+    ["S9-DeepSeek-R1-Distill-Qwen-14B-livecodebench"]="steering_configs/DeepSeek-R1-Distill-Qwen-14B/steering_config-s9-pca_0-livecodebench-purified.npy"
+    ["S9-DeepSeek-R1-Distill-Qwen-14B-arc"]="steering_configs/DeepSeek-R1-Distill-Qwen-14B/steering_config-s9-pca_0-arc-purified.npy"
 
     # Qwen3-14B
     ["S8-Qwen3-14B-math500"]="steering_configs/Qwen3-14B/steering_config-s8-pca_0-math500.npy"
     ["S8-Qwen3-14B-livecodebench"]="steering_configs/Qwen3-14B/steering_config-s8-pca_0-livecodebench.npy"
     ["S8-Qwen3-14B-tinylivecodebench"]="steering_configs/Qwen3-14B/steering_config-s8-pca_0-livecodebench.npy"
     ["S8-Qwen3-14B-arc"]="steering_configs/Qwen3-14B/steering_config-s8-pca_0-arc.npy"
+    ["S9-Qwen3-14B-math500"]="steering_configs/Qwen3-14B/steering_config-s9-pca_0-math500-purified.npy"
+    ["S9-Qwen3-14B-livecodebench"]="steering_configs/Qwen3-14B/steering_config-s9-pca_0-livecodebench-purified.npy"
+    ["S9-Qwen3-14B-arc"]="steering_configs/Qwen3-14B/steering_config-s9-pca_0-arc-purified.npy"
 )
 
-USE_PURIFIED_CONFIGS=true
 
 for model in "${MODELS[@]}"; do
     model_name=$(echo "$model" | cut -d'/' -f2)
     for dataset in "${DATASETS[@]}"; do
         for scenario in "${SCENARIOS[@]}"; do
-            if $USE_PURIFIED_CONFIGS; then
-                config_file="${SCENARIOS_TO_CONFIG_FILES[$scenario-${model_name}-$dataset-purified]}"
-            else
-                config_file="${SCENARIOS_TO_CONFIG_FILES[$scenario-${model_name}-$dataset]}"
-            fi
+            config_file="${SCENARIOS_TO_CONFIG_FILES[$scenario-${model_name}-$dataset]}"
             if [[ -z "$config_file" ]]; then
                 echo "No config for scenario=$scenario dataset=$dataset, skipping."
                 continue
