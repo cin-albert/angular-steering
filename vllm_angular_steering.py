@@ -775,6 +775,13 @@ def get_arc_instructions() -> list[str]:
     return instructions
 
 
+def get_gpqa_diamond_instructions() -> list[str]:
+    from data.gpqa import load_gpqa_diamond_samples
+
+    samples = load_gpqa_diamond_samples()
+    return [sample.user_message for sample in samples]
+
+
 class PromptResponse(TypedDict):
     prompt: str
     response: str
@@ -900,7 +907,13 @@ def main():
         "--dataset",
         type=str,
         default="math500",
-        choices=["math500", "livecodebench", "arc", "tinylivecodebench"],
+        choices=[
+            "math500",
+            "livecodebench",
+            "arc",
+            "tinylivecodebench",
+            "gpqa_diamond",
+        ],
         help="Dataset to use",
     )
     parser.add_argument(
@@ -955,6 +968,8 @@ def main():
         data_test = get_arc_instructions()
     elif args.dataset == "tinylivecodebench":
         data_test = get_tinylivecodebench_instructions()
+    elif args.dataset == "gpqa_diamond":
+        data_test = get_gpqa_diamond_instructions()
     else:
         raise ValueError(f"Invalid dataset: {args.dataset}")
 
