@@ -32,7 +32,12 @@ SCENARIOS_TO_CONFIG_FILES=(
     ["S8-DeepSeek-R1-Distill-LLama-8B-tinylivecodebench"]="steering_configs/DeepSeek-R1-Distill-LLama-8B/steering_config-s8-pca_0-livecodebench.npy"
     ["S8-DeepSeek-R1-Distill-LLama-8B-arc"]="steering_configs/DeepSeek-R1-Distill-LLama-8B/steering_config-s8-pca_0-arc.npy"
     ["S9-DeepSeek-R1-Distill-LLama-8B-math500"]="steering_configs/DeepSeek-R1-Distill-LLama-8B/steering_config-s9-pca_0-math500.npy"
-    
+    ["S9-DeepSeek-R1-Distill-LLama-8B-tinylivecodebench"]="steering_configs/DeepSeek-R1-Distill-LLama-8B/steering_config-s9-pca_0-livecodebench.npy"
+    ["S9-DeepSeek-R1-Distill-LLama-8B-arc"]="steering_configs/DeepSeek-R1-Distill-LLama-8B/steering_config-s9-pca_0-arc.npy"
+
+    # Variant: use math config for tinylivecodebench
+    ["S9_2-DeepSeek-R1-Distill-LLama-8B-tinylivecodebench"]="steering_configs/DeepSeek-R1-Distill-LLama-8B/steering_config-s9-pca_0-math500.npy"
+
     # Qwen3-32B
     ["S8-Qwen3-32B-math500"]="steering_configs/Qwen3-32B/steering_config-s8-pca_0-math500.npy"
     ["S8-Qwen3-32B-livecodebench"]="steering_configs/Qwen3-32B/steering_config-s8-pca_0-livecodebench.npy"
