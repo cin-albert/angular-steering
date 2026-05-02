@@ -7,10 +7,10 @@ DATASETS=(
 )
 
 MODELS=(
-    # "deepseek-ai/DeepSeek-R1-Distill-LLama-8B"
-    "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B"
-    "Qwen/Qwen3-14B"
-    # "Qwen/Qwen3-32B"
+    "deepseek-ai/DeepSeek-R1-Distill-LLama-8B"
+    # "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B"
+    # "Qwen/Qwen3-14B"
+    "Qwen/Qwen3-32B"
 )
 
 SCENARIOS=(
@@ -36,7 +36,9 @@ SCENARIOS_TO_CONFIG_FILES=(
     ["S9-DeepSeek-R1-Distill-LLama-8B-arc"]="steering_configs/DeepSeek-R1-Distill-LLama-8B/steering_config-s9-pca_0-arc.npy"
 
     # Variant: use math config for tinylivecodebench
+    ["S9_2-DeepSeek-R1-Distill-LLama-8B-math500"]="steering_configs/DeepSeek-R1-Distill-LLama-8B/steering_config-s9-pca_0-math500.npy"
     ["S9_2-DeepSeek-R1-Distill-LLama-8B-tinylivecodebench"]="steering_configs/DeepSeek-R1-Distill-LLama-8B/steering_config-s9-pca_0-math500.npy"
+    ["S9_2-DeepSeek-R1-Distill-LLama-8B-gpqa_diamond"]="steering_configs/DeepSeek-R1-Distill-LLama-8B/steering_config-s9-pca_0-math500.npy"
 
     # Qwen3-32B
     ["S8-Qwen3-32B-math500"]="steering_configs/Qwen3-32B/steering_config-s8-pca_0-math500.npy"
@@ -48,8 +50,9 @@ SCENARIOS_TO_CONFIG_FILES=(
     ["S9-Qwen3-32B-arc"]="steering_configs/Qwen3-32B/steering_config-s9-pca_0-arc-purified.npy"
 
     # Variant: use math config for tinylivecodebench
+    ["S9_2-Qwen3-32B-math500"]="steering_configs/Qwen3-32B/steering_config-s9-pca_0-math500-purified.npy"
     ["S9_2-Qwen3-32B-tinylivecodebench"]="steering_configs/Qwen3-32B/steering_config-s9-pca_0-math500-purified.npy"
-
+    ["S9_2-Qwen3-32B-gpqa_diamond"]="steering_configs/Qwen3-32B/steering_config-s9-pca_0-math500-purified.npy"
     
     # DeepSeek-R1-Distill-Qwen-14B
     ["S8-DeepSeek-R1-Distill-Qwen-14B-math500"]="steering_configs/DeepSeek-R1-Distill-Qwen-14B/steering_config-s8-pca_0-math500.npy"
@@ -61,7 +64,9 @@ SCENARIOS_TO_CONFIG_FILES=(
     ["S9-DeepSeek-R1-Distill-Qwen-14B-arc"]="steering_configs/DeepSeek-R1-Distill-Qwen-14B/steering_config-s9-pca_0-arc-purified.npy"
 
     # Variant: use math config for tinylivecodebench
+    ["S9_2-DeepSeek-R1-Distill-Qwen-14B-math500"]="steering_configs/DeepSeek-R1-Distill-Qwen-14B/steering_config-s9-pca_0-math500-purified.npy"
     ["S9_2-DeepSeek-R1-Distill-Qwen-14B-tinylivecodebench"]="steering_configs/DeepSeek-R1-Distill-Qwen-14B/steering_config-s9-pca_0-math500-purified.npy"
+    ["S9_2-DeepSeek-R1-Distill-Qwen-14B-gpqa_diamond"]="steering_configs/DeepSeek-R1-Distill-Qwen-14B/steering_config-s9-pca_0-math500-purified.npy"
 
     # Qwen3-14B
     ["S8-Qwen3-14B-math500"]="steering_configs/Qwen3-14B/steering_config-s8-pca_0-math500.npy"
@@ -73,7 +78,9 @@ SCENARIOS_TO_CONFIG_FILES=(
     ["S9-Qwen3-14B-arc"]="steering_configs/Qwen3-14B/steering_config-s9-pca_0-arc-purified.npy"
 
     # Variant: use math config for tinylivecodebench
+    ["S9_2-Qwen3-14B-math500"]="steering_configs/Qwen3-14B/steering_config-s9-pca_0-math500-purified.npy"
     ["S9_2-Qwen3-14B-tinylivecodebench"]="steering_configs/Qwen3-14B/steering_config-s9-pca_0-math500-purified.npy"
+    ["S9_2-Qwen3-14B-gpqa_diamond"]="steering_configs/Qwen3-14B/steering_config-s9-pca_0-math500-purified.npy"
 )
 
 
