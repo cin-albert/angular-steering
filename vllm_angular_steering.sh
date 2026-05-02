@@ -2,12 +2,13 @@
 
 DATASETS=(
     # "math500"
-    # "arc"
+    # "arc" # Deprecated because it's saturated
     "tinylivecodebench"
+    "gpqa_diamond"
 )
 
 MODELS=(
-    "deepseek-ai/DeepSeek-R1-Distill-LLama-8B"
+    # "deepseek-ai/DeepSeek-R1-Distill-LLama-8B"
     # "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B"
     # "Qwen/Qwen3-14B"
     "Qwen/Qwen3-32B"
