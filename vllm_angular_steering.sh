@@ -37,9 +37,9 @@ SCENARIOS_TO_CONFIG_FILES=(
     ["S9-DeepSeek-R1-Distill-LLama-8B-arc"]="steering_configs/DeepSeek-R1-Distill-LLama-8B/steering_config-s9-pca_0-arc.npy"
 
     # Variant: use math config for code + science datasets
-    ["S9_2-DeepSeek-R1-Distill-LLama-8B-math500"]="steering_configs/DeepSeek-R1-Distill-LLama-8B/steering_config-s9-pca_0-math500.npy"
-    ["S9_2-DeepSeek-R1-Distill-LLama-8B-tinylivecodebench"]="steering_configs/DeepSeek-R1-Distill-LLama-8B/steering_config-s9-pca_0-math500.npy"
-    ["S9_2-DeepSeek-R1-Distill-LLama-8B-gpqa_diamond"]="steering_configs/DeepSeek-R1-Distill-LLama-8B/steering_config-s9-pca_0-math500.npy"
+    ["S9_2-DeepSeek-R1-Distill-LLama-8B-math500"]="steering_configs/DeepSeek-R1-Distill-LLama-8B/steering_config-s9-pca_0-math500-purified.npy"
+    ["S9_2-DeepSeek-R1-Distill-LLama-8B-tinylivecodebench"]="steering_configs/DeepSeek-R1-Distill-LLama-8B/steering_config-s9-pca_0-math500-purified.npy"
+    ["S9_2-DeepSeek-R1-Distill-LLama-8B-gpqa_diamond"]="steering_configs/DeepSeek-R1-Distill-LLama-8B/steering_config-s9-pca_0-math500-purified.npy"
 
     # Qwen3-32B
     ["S8-Qwen3-32B-math500"]="steering_configs/Qwen3-32B/steering_config-s8-pca_0-math500.npy"
