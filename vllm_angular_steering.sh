@@ -1,10 +1,15 @@
 #!/bin/bash
 
+export VLLM_WORKER_MULTIPROC_METHOD=spawn
+
+MAX_MODEL_LEN=
+TP=1
+
 DATASETS=(
     "math500"
     # "arc" # Deprecated because it's saturated
-    "tinylivecodebench"
-    "gpqa_diamond"
+    # "tinylivecodebench"
+    # "gpqa_diamond"
 )
 
 MODELS=(
@@ -32,6 +37,7 @@ SCENARIOS_TO_CONFIG_FILES=(
     ["S8-DeepSeek-R1-Distill-LLama-8B-math500"]="steering_configs/DeepSeek-R1-Distill-LLama-8B/steering_config-s8-pca_0-math500.npy"
     ["S8-DeepSeek-R1-Distill-LLama-8B-tinylivecodebench"]="steering_configs/DeepSeek-R1-Distill-LLama-8B/steering_config-s8-pca_0-livecodebench.npy"
     ["S8-DeepSeek-R1-Distill-LLama-8B-arc"]="steering_configs/DeepSeek-R1-Distill-LLama-8B/steering_config-s8-pca_0-arc.npy"
+
     ["S9-DeepSeek-R1-Distill-LLama-8B-math500"]="steering_configs/DeepSeek-R1-Distill-LLama-8B/steering_config-s9-pca_0-math500.npy"
     ["S9-DeepSeek-R1-Distill-LLama-8B-tinylivecodebench"]="steering_configs/DeepSeek-R1-Distill-LLama-8B/steering_config-s9-pca_0-livecodebench.npy"
     ["S9-DeepSeek-R1-Distill-LLama-8B-arc"]="steering_configs/DeepSeek-R1-Distill-LLama-8B/steering_config-s9-pca_0-arc.npy"
@@ -54,7 +60,7 @@ SCENARIOS_TO_CONFIG_FILES=(
     ["S9_2-Qwen3-32B-math500"]="steering_configs/Qwen3-32B/steering_config-s9-pca_0-math500-purified.npy"
     ["S9_2-Qwen3-32B-tinylivecodebench"]="steering_configs/Qwen3-32B/steering_config-s9-pca_0-math500-purified.npy"
     ["S9_2-Qwen3-32B-gpqa_diamond"]="steering_configs/Qwen3-32B/steering_config-s9-pca_0-math500-purified.npy"
-    
+
     # DeepSeek-R1-Distill-Qwen-14B
     ["S8-DeepSeek-R1-Distill-Qwen-14B-math500"]="steering_configs/DeepSeek-R1-Distill-Qwen-14B/steering_config-s8-pca_0-math500.npy"
     ["S8-DeepSeek-R1-Distill-Qwen-14B-livecodebench"]="steering_configs/DeepSeek-R1-Distill-Qwen-14B/steering_config-s8-pca_0-livecodebench.npy"
@@ -102,7 +108,7 @@ for model in "${MODELS[@]}"; do
             echo "Scenario: $scenario"
             echo "Config File: $config_file"
             echo "================================================"
-            
+
             python3 vllm_angular_steering.py \
                 --model "$model" \
                 --dataset "$dataset" \
@@ -115,8 +121,10 @@ for model in "${MODELS[@]}"; do
                 --angle-end 360 \
                 --angle-step 10 \
                 --max-tokens 16000 \
+                --max-model-len "$MAX_MODEL_LEN" \
+                --tensor-parallel-size "$TP" \
                 --prompt-only \
-                --run-baseline 
+                --run-baseline
         done
     done
 done

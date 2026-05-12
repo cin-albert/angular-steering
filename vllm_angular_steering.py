@@ -60,6 +60,7 @@ Common Angles:
     - 90°/270°: Perpendicular (neutral behavior)
 """
 
+import functools
 import logging
 import os
 
@@ -360,6 +361,67 @@ def create_steering_hook(
     return hook_fn
 
 
+def _register_steering_hooks_fn(model, target_degree=None, adaptive_mode=None,
+                                effective_k=None, shared_operator=None,
+                                target_layers=None):
+    """Top-level function for apply_model (pickle-serializable via functools.partial)."""
+    import builtins
+
+    if not hasattr(builtins, "_steering_state"):
+        builtins._steering_state = {}
+
+    builtins._steering_state["target_degree"] = target_degree
+    builtins._steering_state["adaptive_mode"] = adaptive_mode
+    builtins._steering_state["enabled"] = True
+    builtins._steering_state["steer_k_tokens"] = effective_k
+    builtins._steering_state["decode_step_count"] = 0
+    builtins._steering_state["last_theta"] = None
+
+    builtins._steering_operator = shared_operator
+
+    clear_hooks(model)
+
+    count = 0
+    hooked_layers = []
+    module_dict = dict(model.named_modules())
+    valid_layers = [ln for ln in target_layers if ln in module_dict]
+
+    for layer_name in valid_layers:
+        module = module_dict[layer_name]
+        is_last = (layer_name == valid_layers[-1])
+
+        hook = create_steering_hook(
+            operator=shared_operator,
+            state=builtins._steering_state,
+            layer_name=layer_name,
+            is_last_hooked_layer=is_last,
+        )
+
+        module.register_forward_hook(hook)
+        count += 1
+        hooked_layers.append(layer_name)
+
+    return count
+
+
+def _update_steering_state_fn(model, target_degree=None, adaptive_mode=None,
+                              enabled=None, steer_k_tokens=None, update_k=False):
+    """Top-level function for updating steering state (pickle-serializable)."""
+    import builtins
+
+    if hasattr(builtins, "_steering_state"):
+        if target_degree is not None:
+            builtins._steering_state["target_degree"] = target_degree
+        if adaptive_mode is not None:
+            builtins._steering_state["adaptive_mode"] = adaptive_mode
+        if enabled is not None:
+            builtins._steering_state["enabled"] = enabled
+        if update_k:
+            builtins._steering_state["steer_k_tokens"] = steer_k_tokens
+            builtins._steering_state["decode_step_count"] = 0
+    return True
+
+
 def clear_hooks(model: nn.Module) -> int:
     """
     Clear all forward hooks from a model.
@@ -513,55 +575,15 @@ class AngularSteering:
         # Get target layer names
         target_layers = list(self.steering_configs.keys())
 
-        def register_hooks_fn(model: nn.Module):
-            """Register hooks on target layers in worker process."""
-            import builtins
-
-            # Create shared mutable state in worker process
-            if not hasattr(builtins, "_steering_state"):
-                builtins._steering_state = {}
-
-            builtins._steering_state["target_degree"] = target_degree
-            builtins._steering_state["adaptive_mode"] = adaptive_mode
-            builtins._steering_state["enabled"] = True
-            builtins._steering_state["steer_k_tokens"] = effective_k
-            builtins._steering_state["decode_step_count"] = 0
-            builtins._steering_state["last_theta"] = None
-
-            # Store operator reference
-            builtins._steering_operator = shared_operator
-
-            # Remove existing hooks
-            clear_hooks(model)
-
-            count = 0
-            hooked_layers = []
-
-            # Get module dict
-            module_dict = dict(model.named_modules())
-
-            # Find which target layers actually exist in the model
-            valid_layers = [ln for ln in target_layers if ln in module_dict]
-
-            for layer_name in valid_layers:
-                module = module_dict[layer_name]
-                is_last = (layer_name == valid_layers[-1])
-
-                hook = create_steering_hook(
-                    operator=shared_operator,
-                    state=builtins._steering_state,
-                    layer_name=layer_name,
-                    is_last_hooked_layer=is_last,
-                )
-
-                module.register_forward_hook(hook)
-                count += 1
-                hooked_layers.append(layer_name)
-
-            return count
-
-        # Apply hooks via collective_rpc
-        results = self.llm.apply_model(register_hooks_fn)
+        # Apply hooks via collective_rpc (functools.partial is pickle-serializable)
+        results = self.llm.apply_model(functools.partial(
+            _register_steering_hooks_fn,
+            target_degree=target_degree,
+            adaptive_mode=adaptive_mode,
+            effective_k=effective_k,
+            shared_operator=shared_operator,
+            target_layers=target_layers,
+        ))
         self.hooks_registered = True
 
         steer_mode_desc = (
@@ -616,23 +638,15 @@ class AngularSteering:
         if update_k:
             self._steer_k_tokens = steer_k_tokens
 
-        # Update worker state
-        def update_state_fn(model: nn.Module):
-            import builtins
-
-            if hasattr(builtins, "_steering_state"):
-                if target_degree is not None:
-                    builtins._steering_state["target_degree"] = target_degree
-                if adaptive_mode is not None:
-                    builtins._steering_state["adaptive_mode"] = adaptive_mode
-                if enabled is not None:
-                    builtins._steering_state["enabled"] = enabled
-                if update_k:
-                    builtins._steering_state["steer_k_tokens"] = steer_k_tokens
-                    builtins._steering_state["decode_step_count"] = 0
-            return True
-
-        self.llm.apply_model(update_state_fn)
+        # Update worker state (functools.partial is pickle-serializable)
+        self.llm.apply_model(functools.partial(
+            _update_steering_state_fn,
+            target_degree=target_degree,
+            adaptive_mode=adaptive_mode,
+            enabled=enabled,
+            steer_k_tokens=steer_k_tokens,
+            update_k=update_k,
+        ))
 
         logger.info(
             f"Updated steering: degree={self._target_degree}, "
@@ -645,10 +659,7 @@ class AngularSteering:
         Remove all steering hooks from the model.
         """
 
-        def remove_hooks_fn(model: nn.Module):
-            return clear_hooks(model)
-
-        count = self.llm.apply_model(remove_hooks_fn)
+        count = self.llm.apply_model(clear_hooks)
         self.hooks_registered = False
         self._enabled = False
 
@@ -743,6 +754,8 @@ def _format_prompts_for_vllm(instructions: List[str]) -> List[List[dict]]:
     return [[{"role": "user", "content": instruction}] for instruction in instructions]
 
 
+
+
 def get_math500_instructions():
     huggingface_id = "HuggingFaceH4/MATH-500"
     dataset = load_dataset(huggingface_id, split="test")
@@ -790,13 +803,13 @@ class PromptResponse(TypedDict):
 def main():
     """
     Generate responses with angular steering for evaluation pipeline.
-    
+
     Usage (directory mode):
         python vllm_angular_steering.py --model Qwen/Qwen2.5-7B-Instruct \\
             --config-dir output \\
             --output-dir output \\
             --language en --adaptive-mode 1 --angle-step 10
-    
+
     Usage (single config mode):
         python vllm_angular_steering.py --model Qwen/Qwen2.5-7B-Instruct \\
             --config-file output/Qwen2.5-7B-Instruct/steering_config-en-dir_max_sim_19_mid-pca_0.npy \\
@@ -885,6 +898,12 @@ def main():
         help="GPU memory utilization for vLLM",
     )
     parser.add_argument(
+        "--max-model-len",
+        type=lambda x: int(x) if x else None,
+        default=None,
+        help="Maximum model context length (overrides model default)",
+    )
+    parser.add_argument(
         "--tensor-parallel-size",
         type=int,
         default=1,
@@ -920,7 +939,7 @@ def main():
         "--scenario",
         type=str,
         default="S7",
-        choices=["S7", "S8", "S9"],
+        choices=["S7", "S8", "S9", "S9_2"],
         help="Scenario to use",
     )
 
@@ -977,13 +996,16 @@ def main():
 
     # Initialize vLLM (disable progress bars for cleaner logs)
     logger.info(f"Initializing vLLM with model: {args.model}")
-    llm = LLM(
+    llm_kwargs = dict(
         model=args.model,
         enforce_eager=True,  # REQUIRED for hooks
         tensor_parallel_size=args.tensor_parallel_size,
         gpu_memory_utilization=args.gpu_memory_utilization,
-        disable_log_stats=True,  # Cleaner logging
+        disable_log_stats=True,
     )
+    if args.max_model_len is not None:
+        llm_kwargs["max_model_len"] = args.max_model_len
+    llm = LLM(**llm_kwargs)
 
     sampling_params = SamplingParams(
         temperature=0.0,

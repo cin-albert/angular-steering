@@ -9,3 +9,5 @@ pytorch_pure/output/
 
 # macos specific
 .DS_Store
+output/thinking_steering_generations
+.env
