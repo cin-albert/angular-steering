@@ -22,6 +22,11 @@ SCENARIOS=(
     "S9_2"
 )
 
+## Clarify the scenarios
+# S8: Use raw configs for all datasets
+# S8_2: Use raw math config for math + science datasets, raw code config for code datasets
+# S9: Use purified configs for all datasets
+# S9_2: Use purified math config for math + science datasets, purified code config for code datasets
 
 declare -A SCENARIOS_TO_CONFIG_FILES
 
@@ -37,6 +42,7 @@ SCENARIOS_TO_CONFIG_FILES=(
     ["S9-DeepSeek-R1-Distill-LLama-8B-arc"]="steering_configs/DeepSeek-R1-Distill-LLama-8B/steering_config-s9-pca_0-arc.npy"
 
     # Variant: use math config for code + science datasets
+    ["S8_2-DeepSeek-R1-Distill-LLama-8B-gpqa_diamond"]="steering_configs/DeepSeek-R1-Distill-LLama-8B/steering_config-s8-pca_0-math500.npy"
     ["S9_2-DeepSeek-R1-Distill-LLama-8B-math500"]="steering_configs/DeepSeek-R1-Distill-LLama-8B/steering_config-s9-pca_0-math500-purified.npy"
     ["S9_2-DeepSeek-R1-Distill-LLama-8B-tinylivecodebench"]="steering_configs/DeepSeek-R1-Distill-LLama-8B/steering_config-s9-pca_0-math500-purified.npy"
     ["S9_2-DeepSeek-R1-Distill-LLama-8B-gpqa_diamond"]="steering_configs/DeepSeek-R1-Distill-LLama-8B/steering_config-s9-pca_0-math500-purified.npy"
@@ -51,6 +57,7 @@ SCENARIOS_TO_CONFIG_FILES=(
     ["S9-Qwen3-32B-arc"]="steering_configs/Qwen3-32B/steering_config-s9-pca_0-arc-purified.npy"
 
     # Variant: use math config for code + science datasets
+    ["S8_2-Qwen3-32B-gpqa_diamond"]="steering_configs/Qwen3-32B/steering_config-s8-pca_0-math500.npy"
     ["S9_2-Qwen3-32B-math500"]="steering_configs/Qwen3-32B/steering_config-s9-pca_0-math500-purified.npy"
     ["S9_2-Qwen3-32B-tinylivecodebench"]="steering_configs/Qwen3-32B/steering_config-s9-pca_0-math500-purified.npy"
     ["S9_2-Qwen3-32B-gpqa_diamond"]="steering_configs/Qwen3-32B/steering_config-s9-pca_0-math500-purified.npy"
@@ -65,6 +72,7 @@ SCENARIOS_TO_CONFIG_FILES=(
     ["S9-DeepSeek-R1-Distill-Qwen-14B-arc"]="steering_configs/DeepSeek-R1-Distill-Qwen-14B/steering_config-s9-pca_0-arc-purified.npy"
 
     # Variant: use math config for code + science datasets
+    ["S8_2-DeepSeek-R1-Distill-Qwen-14B-gpqa_diamond"]="steering_configs/DeepSeek-R1-Distill-Qwen-14B/steering_config-s8-pca_0-math500.npy"
     ["S9_2-DeepSeek-R1-Distill-Qwen-14B-math500"]="steering_configs/DeepSeek-R1-Distill-Qwen-14B/steering_config-s9-pca_0-math500-purified.npy"
     ["S9_2-DeepSeek-R1-Distill-Qwen-14B-tinylivecodebench"]="steering_configs/DeepSeek-R1-Distill-Qwen-14B/steering_config-s9-pca_0-math500-purified.npy"
     ["S9_2-DeepSeek-R1-Distill-Qwen-14B-gpqa_diamond"]="steering_configs/DeepSeek-R1-Distill-Qwen-14B/steering_config-s9-pca_0-math500-purified.npy"
@@ -79,6 +87,7 @@ SCENARIOS_TO_CONFIG_FILES=(
     ["S9-Qwen3-14B-arc"]="steering_configs/Qwen3-14B/steering_config-s9-pca_0-arc-purified.npy"
 
     # Variant: use math config for code + science datasets
+    ["S8_2-Qwen3-14B-gpqa_diamond"]="steering_configs/Qwen3-14B/steering_config-s8-pca_0-math500.npy"
     ["S9_2-Qwen3-14B-math500"]="steering_configs/Qwen3-14B/steering_config-s9-pca_0-math500-purified.npy"
     ["S9_2-Qwen3-14B-tinylivecodebench"]="steering_configs/Qwen3-14B/steering_config-s9-pca_0-math500-purified.npy"
     ["S9_2-Qwen3-14B-gpqa_diamond"]="steering_configs/Qwen3-14B/steering_config-s9-pca_0-math500-purified.npy"
