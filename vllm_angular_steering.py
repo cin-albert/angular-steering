@@ -782,6 +782,15 @@ def get_gpqa_diamond_instructions() -> list[str]:
     return [sample.user_message for sample in samples]
 
 
+def get_prompt_file_instructions(prompt_file: str) -> list[str]:
+    """Load instructions from a JSON list of {"full_prompt": ...} dicts."""
+    import json
+
+    with open(prompt_file) as f:
+        samples = json.load(f)
+    return [sample["full_prompt"] for sample in samples]
+
+
 class PromptResponse(TypedDict):
     prompt: str
     response: str
@@ -913,14 +922,21 @@ def main():
             "arc",
             "tinylivecodebench",
             "gpqa_diamond",
+            "lcb_v5v6",
         ],
         help="Dataset to use",
+    )
+    parser.add_argument(
+        "--prompt-file",
+        type=str,
+        default=None,
+        help="JSON list of {question_id, full_prompt} (dataset=lcb_v5v6)",
     )
     parser.add_argument(
         "--scenario",
         type=str,
         default="S7",
-        choices=["S7", "S8", "S9"],
+        choices=["S7", "S8", "S9", "DIFF"],
         help="Scenario to use",
     )
 
@@ -931,6 +947,8 @@ def main():
         parser.error("Either --config-dir or --config-file must be specified")
     if args.config_dir is not None and args.config_file is not None:
         parser.error("Cannot specify both --config-dir and --config-file")
+    if args.dataset == "lcb_v5v6" and args.prompt_file is None:
+        parser.error("--dataset lcb_v5v6 requires --prompt-file")
 
     # Setup paths
     model_name = args.model.split("/")[-1]
@@ -970,6 +988,8 @@ def main():
         data_test = get_tinylivecodebench_instructions()
     elif args.dataset == "gpqa_diamond":
         data_test = get_gpqa_diamond_instructions()
+    elif args.dataset == "lcb_v5v6":
+        data_test = get_prompt_file_instructions(args.prompt_file)
     else:
         raise ValueError(f"Invalid dataset: {args.dataset}")
 
