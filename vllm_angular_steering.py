@@ -219,6 +219,85 @@ class AngularSteeringOperator:
         self._rotation_cache.clear()
 
 
+class ActAddOperator:
+    """
+    Activation Addition (ActAdd) steering operator.
+
+    Implements the ActAdd intervention (Turner et al., arXiv:2308.10248):
+
+        h' = h + coefficient * v
+
+    where ``v`` is a fixed steering direction and ``coefficient`` is a
+    hand-set scalar (NOT learned). It exposes the same ``.steer()`` surface as
+    ``AngularSteeringOperator`` so it drops into the identical hook / sweep /
+    output machinery, with the swept value reinterpreted as ``coefficient``.
+
+    Unlike angular rotate-to, this is not magnitude-preserving: the effective
+    strength is ``coefficient * ||v||`` per token, added to every steered
+    position.
+    """
+
+    def __init__(self, direction: np.ndarray):
+        """
+        Args:
+            direction: Steering vector ``v`` of shape (hidden_dim,). Typically
+                the raw (un-normalized) difference-in-means vector, so that
+                ``coefficient=1`` adds exactly one measured group gap.
+        """
+        self.direction = torch.from_numpy(np.asarray(direction)).float()
+        self._device_cache: Dict[Tuple, torch.Tensor] = {}
+
+    def _get_direction(
+        self, device: torch.device, dtype: torch.dtype
+    ) -> torch.Tensor:
+        cache_key = (device, dtype)
+        if cache_key not in self._device_cache:
+            self._device_cache[cache_key] = self.direction.to(
+                device=device, dtype=dtype
+            )
+        return self._device_cache[cache_key]
+
+    def steer(
+        self,
+        hidden_states: torch.Tensor,
+        target_degree: float,
+        adaptive_mode: int = 0,
+    ) -> torch.Tensor:
+        """
+        Add ``coefficient * v`` to the hidden states.
+
+        Args:
+            hidden_states: Tensor of shape (..., hidden_dim).
+            target_degree: Reinterpreted as the ActAdd ``coefficient`` (float,
+                may be negative). Named ``target_degree`` only to match the
+                shared operator interface driven by ``set_degree()``.
+            adaptive_mode: 0 = add to all steered positions (standard ActAdd);
+                1 = only where the activation aligns with ``v`` (``h·v > 0``),
+                for parity with angular's adaptive mode.
+
+        Returns:
+            Steered hidden states with the same shape as the input.
+        """
+        coefficient = float(target_degree)
+        v = self._get_direction(hidden_states.device, hidden_states.dtype)
+        delta = coefficient * v
+
+        if adaptive_mode == 0:
+            return hidden_states + delta
+
+        # Adaptive: only add where activation is aligned with the direction.
+        alignment = hidden_states @ v
+        mask = (alignment > 0).unsqueeze(-1)
+        return torch.where(mask, hidden_states + delta, hidden_states)
+
+    def clear_cache(self):
+        self._device_cache.clear()
+
+    def clear_rotation_cache(self):
+        """No-op: ActAdd has no rotation cache (interface parity)."""
+        pass
+
+
 # =============================================================================
 # Hook Creation and Management
 # =============================================================================
@@ -394,15 +473,18 @@ class AngularSteering:
     Requires vLLM to be initialized with enforce_eager=True for hooks to work.
     """
 
-    def __init__(self, llm):
+    def __init__(self, llm, steering_method: str = "angular"):
         """
         Initialize AngularSteering with a vLLM instance.
 
         Args:
             llm: vLLM LLM instance (must have enforce_eager=True)
+            steering_method: "angular" (rotate-to) or "actadd" (activation
+                addition). Selects which operator is built per config entry.
         """
         self.llm = llm
-        self.steering_configs: Dict[str, AngularSteeringOperator] = {}
+        self.steering_method = steering_method
+        self.steering_configs: Dict[str, object] = {}
         self.hooks_registered = False
 
         # Global steering state
@@ -454,13 +536,19 @@ class AngularSteering:
         # Create operators for each layer
         self.steering_configs = {}
         for layer_name, config in config_dict.items():
-            operator = AngularSteeringOperator(
-                first_direction=config["first_direction"],
-                second_direction=config["second_direction"],
-            )
+            if self.steering_method == "actadd":
+                operator = ActAddOperator(direction=config["direction"])
+            else:
+                operator = AngularSteeringOperator(
+                    first_direction=config["first_direction"],
+                    second_direction=config["second_direction"],
+                )
             self.steering_configs[layer_name] = operator
 
-        logger.info(f"Created {len(self.steering_configs)} steering operators")
+        logger.info(
+            f"Created {len(self.steering_configs)} {self.steering_method} "
+            f"steering operators"
+        )
 
     def apply_steering(
         self,
@@ -936,8 +1024,23 @@ def main():
         "--scenario",
         type=str,
         default="S7",
-        choices=["S7", "S8", "S9", "DIFF"],
+        choices=["S7", "S8", "S9", "DIFF", "ACTADD"],
         help="Scenario to use",
+    )
+    parser.add_argument(
+        "--steering-method",
+        type=str,
+        default="angular",
+        choices=["angular", "actadd"],
+        help="Steering method: angular rotate-to (sweeps angles) or "
+        "actadd activation addition (sweeps --coefficients).",
+    )
+    parser.add_argument(
+        "--coefficients",
+        type=str,
+        default=None,
+        help="Comma-separated ActAdd coefficients, e.g. '-2,-1,0,1,2,4'. "
+        "Required when --steering-method actadd; replaces the angle sweep.",
     )
 
     args = parser.parse_args()
@@ -949,6 +1052,8 @@ def main():
         parser.error("Cannot specify both --config-dir and --config-file")
     if args.dataset == "lcb_v5v6" and args.prompt_file is None:
         parser.error("--dataset lcb_v5v6 requires --prompt-file")
+    if args.steering_method == "actadd" and not args.coefficients:
+        parser.error("--steering-method actadd requires --coefficients")
 
     # Setup paths
     model_name = args.model.split("/")[-1]
@@ -1039,7 +1144,7 @@ def main():
 
 
     logger.info(f"Found {len(steering_configs)} steering config(s)")
-    steering = AngularSteering(llm)
+    steering = AngularSteering(llm, steering_method=args.steering_method)
 
     # Process each config
     for config_file in steering_configs:
@@ -1081,43 +1186,58 @@ def main():
         steered_responses = {}
         sweep_start = time.time()
 
-        angles = range(args.angle_start, args.angle_end, args.angle_step)
-        # angles = [180, 0, 90]
-        for degree in tqdm(angles, desc="Generating"):
-            logger.info(f"Processing degree={degree}")
-            degree_start = time.time()
+        # Sweep values: angles (angular) or coefficients (actadd). The swept
+        # value flows through set_degree() into operator.steer() unchanged;
+        # ActAddOperator reinterprets it as the coefficient.
+        if args.steering_method == "actadd":
+            sweep_values = [float(c) for c in args.coefficients.split(",")]
+        else:
+            sweep_values = list(
+                range(args.angle_start, args.angle_end, args.angle_step)
+            )
 
-            steering.set_degree(degree)
+        for value in tqdm(sweep_values, desc="Generating"):
+            logger.info(f"Processing value={value}")
+            value_start = time.time()
+
+            steering.set_degree(value)
 
             outputs = llm.chat(chat_messages, sampling_params=sampling_params)
-            steered_responses[str(degree)] = [
+            steered_responses[str(value)] = [
                 PromptResponse(prompt=chat_message[0]["content"], response=output.outputs[0].text) for chat_message, output in zip(chat_messages, outputs)
                 # output.outputs[0].text for output in outputs
             ]
 
-            degree_time = time.time() - degree_start
-            logger.info(f"  Degree {degree} took {degree_time:.2f}s")
+            value_time = time.time() - value_start
+            logger.info(f"  Value {value} took {value_time:.2f}s")
 
-            config_label = (
-                f"rotated_angle_{degree}" if args.adaptive_mode == 0 else f"adaptive_{args.adaptive_mode}_angle_{degree}"
-            )
+            if args.steering_method == "actadd":
+                config_label = f"actadd_coeff_{value}"
+            elif args.adaptive_mode == 0:
+                config_label = f"rotated_angle_{value}"
+            else:
+                config_label = f"adaptive_{args.adaptive_mode}_angle_{value}"
             per_angle_output_file = output_path / f"{args.dataset}-{args.language}-{direction_info}-pca_0-{config_label}.json"
             with open(per_angle_output_file, "w") as f:
-                json.dump(steered_responses[str(degree)], f, indent=4, ensure_ascii=False)
+                json.dump(steered_responses[str(value)], f, indent=4, ensure_ascii=False)
                 logger.info(f"Saved to {per_angle_output_file}")
 
         sweep_time = time.time() - sweep_start
-        logger.info(f"Full sweep (0-360°) took {sweep_time:.2f}s")
-        logger.info(
-            f"  Average per angle: {sweep_time / (360 // args.angle_step):.2f}s"
-        )
+        logger.info(f"Full sweep took {sweep_time:.2f}s over {len(sweep_values)} values")
+        if sweep_values:
+            logger.info(
+                f"  Average per value: {sweep_time / len(sweep_values):.2f}s"
+            )
 
         steering.remove_steering()
 
         # Save responses
-        adaptive_label = (
-            "rotated" if args.adaptive_mode == 0 else f"adaptive_{args.adaptive_mode}"
-        )
+        if args.steering_method == "actadd":
+            adaptive_label = "actadd"
+        elif args.adaptive_mode == 0:
+            adaptive_label = "rotated"
+        else:
+            adaptive_label = f"adaptive_{args.adaptive_mode}"
         output_file = (
             output_path
             / f"{args.dataset}-{args.language}-{direction_info}-pca_0-{adaptive_label}.json"
