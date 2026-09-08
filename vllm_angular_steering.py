@@ -959,6 +959,13 @@ def main():
         help="Rotation angle step (10 for 36 angles, 30 for 12 angles)",
     )
     parser.add_argument(
+        "--angles",
+        type=str,
+        default=None,
+        help="Explicit comma-separated angle list (overrides angle-start/end/step "
+        "for the angular method; e.g. '0,30,60,90,120,150,180,210,240,270,300,330').",
+    )
+    parser.add_argument(
         "--run-baseline",
         action="store_true",
         help="Run baseline generation",
@@ -986,6 +993,13 @@ def main():
         type=int,
         default=1,
         help="Tensor parallel size for vLLM",
+    )
+    parser.add_argument(
+        "--max-model-len",
+        type=int,
+        default=None,
+        help="Override vLLM max_model_len (default: model's full context). Lower "
+        "it (e.g. 20000) to fit KV cache on a memory-constrained/shared GPU.",
     )
     parser.add_argument(
         "--prompt-only",
@@ -1024,7 +1038,7 @@ def main():
         "--scenario",
         type=str,
         default="S7",
-        choices=["S7", "S8", "S9", "DIFF", "ACTADD"],
+        choices=["S7", "S8", "S9", "DIFF", "ACTADD", "DELIB_TC"],
         help="Scenario to use",
     )
     parser.add_argument(
@@ -1102,13 +1116,16 @@ def main():
 
     # Initialize vLLM (disable progress bars for cleaner logs)
     logger.info(f"Initializing vLLM with model: {args.model}")
-    llm = LLM(
+    _llm_kwargs = dict(
         model=args.model,
         enforce_eager=True,  # REQUIRED for hooks
         tensor_parallel_size=args.tensor_parallel_size,
         gpu_memory_utilization=args.gpu_memory_utilization,
         disable_log_stats=True,  # Cleaner logging
     )
+    if args.max_model_len is not None:
+        _llm_kwargs["max_model_len"] = args.max_model_len
+    llm = LLM(**_llm_kwargs)
 
     sampling_params = SamplingParams(
         temperature=0.0,
@@ -1191,6 +1208,8 @@ def main():
         # ActAddOperator reinterprets it as the coefficient.
         if args.steering_method == "actadd":
             sweep_values = [float(c) for c in args.coefficients.split(",")]
+        elif args.angles:
+            sweep_values = [int(a) for a in args.angles.split(",")]
         else:
             sweep_values = list(
                 range(args.angle_start, args.angle_end, args.angle_step)
